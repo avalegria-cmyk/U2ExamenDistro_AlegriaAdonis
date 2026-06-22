@@ -1,6 +1,6 @@
 # Sistema distribuido Northwind de productos y compras
 
-Adonis Alegría
+Adonis Alegria
 
 ## Stack tecnológico
 
