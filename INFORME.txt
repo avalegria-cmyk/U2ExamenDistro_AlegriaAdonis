@@ -1,0 +1,47 @@
+INFORME TÉCNICO
+
+1. ORGANIZACIÓN DE LA APLICACIÓN
+
+La aplicación utiliza React como cliente y Node.js con Express como servidor. El backend se organiza en adaptadores, controladores, servicios, repositorios, rutas, middlewares, errores y configuración. PostgreSQL 18 restaura Northwind.backup y almacena los productos y las compras.
+
+Google autentica al usuario mediante OAuth 2.0. El servidor verifica la credencial con Google y genera un JWT que contiene el identificador, nombre, correo, fecha de expiración y un identificador único jti. El middleware de autenticación protege el CRUD y la compra.
+
+El cierre de sesión llama a POST /api/auth/logout. El servidor guarda el jti del token en la tabla revoked_tokens hasta que expire. El cliente elimina el JWT de localStorage. Si se intenta reutilizar el token, incluso después de reiniciar el servidor, el middleware responde con estado 401.
+
+2. CRUD Y COMPRA
+
+GET /api/products lista productos y permite buscarlos con el parámetro search.
+
+GET /api/products/:id busca un producto por identificador.
+
+POST /api/products crea un producto.
+
+PUT /api/products/:id actualiza un producto.
+
+DELETE /api/products/:id elimina un producto que no tenga compras asociadas.
+
+POST /api/products/:id/purchase simula una compra.
+
+La compra se ejecuta dentro de una transacción de PostgreSQL. ProductRepository.purchase bloquea el producto con SELECT FOR UPDATE, comprueba que exista, que no esté descontinuado y que tenga suficientes unidades. Después descuenta el stock y registra la compra. Si alguna operación falla, la transacción no deja cambios incompletos.
+
+3. MANEJO DE ERRORES Y LOGS
+
+El archivo errors/app.error.js contiene errores específicos para validación, autenticación, registros inexistentes y falta de stock. Los controladores entregan los errores al middleware centralizado error.middleware.js. Este componente devuelve siempre un código, un mensaje y el estado HTTP correspondiente.
+
+Winston registra inicios y cierres de sesión, operaciones CRUD, compras, accesos no autorizados y errores. El formato timestamp de Winston utiliza fechas ISO en UTC. El filtro sanitize elimina los campos token, credential y password antes de escribir el evento. Los logs se muestran en consola y se guardan en backend/logs/system.log.
+
+4. PRINCIPIO DE RESPONSABILIDAD ÚNICA
+
+Cada componente tiene una responsabilidad concreta. ProductController transforma la petición HTTP en una llamada del sistema. ProductService valida datos y aplica las reglas de productos y compras. ProductRepository ejecuta las consultas de PostgreSQL. Esta separación evita mezclar acceso a datos, reglas y respuestas HTTP en un mismo archivo.
+
+5. PRINCIPIO DE INVERSIÓN DE DEPENDENCIAS
+
+Las dependencias se construyen en app.js. ProductService recibe un repositorio en su constructor y AuthService recibe un proveedor de autenticación, un repositorio de tokens y un logger. Los servicios no crean directamente estas dependencias. Por esta razón se pueden sustituir por otras implementaciones o por dobles de prueba sin cambiar las reglas del sistema.
+
+6. PATRÓN ADAPTER
+
+GoogleAuthAdapter encapsula google-auth-library y presenta al servicio un método sencillo llamado verify. El adaptador convierte el payload específico de Google en el formato de usuario utilizado por la aplicación. AuthService trabaja con ese formato y no necesita conocer los métodos internos de la biblioteca de Google. Si se incorpora otro proveedor OAuth, se puede crear otro adaptador con la misma operación.
+
+7. SEGURIDAD DE LA SESIÓN
+
+JWT_SECRET se recibe únicamente desde el entorno y no tiene un valor secreto predeterminado. Las rutas protegidas rechazan tokens ausentes, inválidos, vencidos o revocados. Los archivos .env, la base local y los logs no se incluyen en el control de versiones. El sistema nunca registra credenciales ni tokens completos.
